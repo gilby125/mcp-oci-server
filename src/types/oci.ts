@@ -114,7 +114,7 @@ export interface NodePool {
       subnetId: string;
     }>;
   };
-  timeCreated: string;
+  timeCreated?: string; // Made optional as it's no longer available in the SDK
 }
 
 export interface WorkloadMapping {

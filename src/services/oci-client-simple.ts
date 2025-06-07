@@ -29,7 +29,7 @@ export class OCIClientService {
   }
 
   private initializeClients(): void {
-    this.provider = new common.ConfigFileAuthenticationDetailsProvider();
+    this.provider = this.createAuthProvider();
 
     this.computeClient = new core.ComputeClient({
       authenticationDetailsProvider: this.provider,
@@ -46,6 +46,27 @@ export class OCIClientService {
     this.identityClient = new identity.IdentityClient({
       authenticationDetailsProvider: this.provider,
     });
+  }
+
+  private createAuthProvider(): common.AuthenticationDetailsProvider {
+    // Try config file auth first (includes session auth if available)
+    try {
+      return new common.ConfigFileAuthenticationDetailsProvider();
+    } catch (configError) {
+      // Fall back to simple auth with config service if we have environment variables
+      if (this.configService.isConfigured()) {
+        const config = this.configService.getConfig();
+        return new common.SimpleAuthenticationDetailsProvider(
+          config.tenancy,
+          config.user,
+          config.fingerprint,
+          config.key,
+          null, // passphrase
+          config.region as any // Type assertion for region
+        );
+      }
+      throw new Error(`Failed to initialize OCI authentication. Config file error: ${configError.message}. Please ensure either ~/.oci/config exists or set environment variables.`);
+    }
   }
 
   // Compute Operations

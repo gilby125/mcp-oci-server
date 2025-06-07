@@ -34,9 +34,7 @@ export class OCIClientService {
   }
 
   private initializeClients(): void {
-    const config = this.configService.getConfig();
-    
-    this.provider = new common.ConfigFileAuthenticationDetailsProvider();
+    this.provider = this.createAuthProvider();
 
     this.computeClient = new core.ComputeClient({
       authenticationDetailsProvider: this.provider,
@@ -57,6 +55,27 @@ export class OCIClientService {
     this.containerEngineClient = new containerengine.ContainerEngineClient({
       authenticationDetailsProvider: this.provider,
     });
+  }
+
+  private createAuthProvider(): common.AuthenticationDetailsProvider {
+    // Try config file auth first (includes session auth if available)
+    try {
+      return new common.ConfigFileAuthenticationDetailsProvider();
+    } catch (configError) {
+      // Fall back to simple auth with config service if we have environment variables
+      if (this.configService.isConfigured()) {
+        const config = this.configService.getConfig();
+        return new common.SimpleAuthenticationDetailsProvider(
+          config.tenancy,
+          config.user,
+          config.fingerprint,
+          config.key,
+          null, // passphrase
+          config.region as any // Type assertion for region
+        );
+      }
+      throw new Error(`Failed to initialize OCI authentication. Config file error: ${configError.message}. Please ensure either ~/.oci/config exists or set environment variables.`);
+    }
   }
 
   // Compute Operations
@@ -304,8 +323,8 @@ export class OCIClientService {
         subnetId: cluster.endpointConfig?.subnetId || '',
         isPublicIpEnabled: cluster.endpointConfig?.isPublicIpEnabled || false,
       },
-      timeCreated: cluster.timeCreated.toISOString(),
-      timeUpdated: cluster.timeUpdated?.toISOString(),
+      timeCreated: cluster.metadata?.timeCreated?.toISOString() || '',
+      timeUpdated: cluster.metadata?.timeUpdated?.toISOString(),
     }));
   }
 
@@ -328,8 +347,8 @@ export class OCIClientService {
         subnetId: cluster.endpointConfig?.subnetId || '',
         isPublicIpEnabled: cluster.endpointConfig?.isPublicIpEnabled || false,
       },
-      timeCreated: cluster.timeCreated.toISOString(),
-      timeUpdated: cluster.timeUpdated?.toISOString(),
+      timeCreated: cluster.metadata?.timeCreated?.toISOString() || '',
+      timeUpdated: cluster.metadata?.timeUpdated?.toISOString(),
     };
   }
 
@@ -359,22 +378,10 @@ export class OCIClientService {
     };
 
     const response = await this.containerEngineClient.createCluster(request);
-    const cluster = response.cluster;
-
-    return {
-      id: cluster.id,
-      name: cluster.name,
-      kubernetesVersion: cluster.kubernetesVersion,
-      lifecycleState: cluster.lifecycleState,
-      compartmentId: cluster.compartmentId,
-      vcnId: cluster.vcnId,
-      endpointConfig: {
-        subnetId: cluster.endpointConfig?.subnetId || '',
-        isPublicIpEnabled: cluster.endpointConfig?.isPublicIpEnabled || false,
-      },
-      timeCreated: cluster.timeCreated.toISOString(),
-      timeUpdated: cluster.timeUpdated?.toISOString(),
-    };
+    
+    // Since the response now only contains work request ID, we need to wait or return a work request response
+    // For now, we'll throw an error indicating this needs to be updated to handle async operations
+    throw new Error('Create cluster now returns work request ID. Use work request operations to track status.');
   }
 
   async deleteCluster(clusterId: string): Promise<void> {
@@ -410,7 +417,7 @@ export class OCIClientService {
           subnetId: config.subnetId,
         })) || [],
       },
-      timeCreated: nodePool.timeCreated.toISOString(),
+      // timeCreated is no longer available in NodePoolSummary
     }));
   }
 
@@ -437,7 +444,7 @@ export class OCIClientService {
           subnetId: config.subnetId,
         })) || [],
       },
-      timeCreated: nodePool.timeCreated.toISOString(),
+      // timeCreated is no longer available in NodePool
     };
   }
 
@@ -473,25 +480,10 @@ export class OCIClientService {
     };
 
     const response = await this.containerEngineClient.createNodePool(request);
-    const nodePool = response.nodePool;
-
-    return {
-      id: nodePool.id,
-      name: nodePool.name,
-      kubernetesVersion: nodePool.kubernetesVersion,
-      lifecycleState: nodePool.lifecycleState,
-      clusterId: nodePool.clusterId,
-      compartmentId: nodePool.compartmentId,
-      nodeShape: nodePool.nodeShape,
-      nodeConfigDetails: {
-        size: nodePool.nodeConfigDetails?.size || 0,
-        placementConfigs: nodePool.nodeConfigDetails?.placementConfigs?.map(config => ({
-          availabilityDomain: config.availabilityDomain,
-          subnetId: config.subnetId,
-        })) || [],
-      },
-      timeCreated: nodePool.timeCreated.toISOString(),
-    };
+    
+    // Since the response now only contains work request ID, we need to wait or return a work request response
+    // For now, we'll throw an error indicating this needs to be updated to handle async operations
+    throw new Error('Create node pool now returns work request ID. Use work request operations to track status.');
   }
 
   async deleteNodePool(nodePoolId: string): Promise<void> {
@@ -508,6 +500,38 @@ export class OCIClientService {
     };
 
     const response = await this.containerEngineClient.createKubeconfig(request);
-    return Buffer.from(response.inputStream).toString('utf-8');
+    // Convert the stream/ReadableStream to string
+    if (response.value instanceof ReadableStream) {
+      const reader = response.value.getReader();
+      const chunks: Uint8Array[] = [];
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      
+      const concatenated = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
+      let offset = 0;
+      for (const chunk of chunks) {
+        concatenated.set(chunk, offset);
+        offset += chunk.length;
+      }
+      
+      return new TextDecoder().decode(concatenated);
+    } else {
+      // For Node.js stream.Readable - check if it has the 'on' method
+      const stream = response.value as any;
+      if (stream && typeof stream.on === 'function') {
+        return new Promise((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+          stream.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+          stream.on('error', reject);
+        });
+      } else {
+        throw new Error('Unsupported stream type for kubeconfig response');
+      }
+    }
   }
 }

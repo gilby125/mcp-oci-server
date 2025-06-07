@@ -10,7 +10,7 @@ export class OCIConfigService {
     if (config) {
       this.config = this.validateConfig(config);
     } else {
-      this.loadConfigFromFile();
+      this.loadConfigFromEnvironmentOrFile();
     }
   }
 
@@ -19,6 +19,34 @@ export class OCIConfigService {
       return OCIConfigSchema.parse(config);
     } catch (error) {
       throw new Error(`Invalid OCI configuration: ${error}`);
+    }
+  }
+
+  private loadConfigFromEnvironmentOrFile(): void {
+    // First try environment variables
+    try {
+      const envConfig = this.getConfigFromEnvironment();
+      if (this.hasRequiredFields(envConfig)) {
+        this.config = this.validateConfig(envConfig);
+        return;
+      }
+    } catch (error) {
+      // Continue to file-based config if env config fails
+    }
+
+    // Try config file, but don't require it if it's incomplete (session auth might work)
+    try {
+      this.loadConfigFromFile();
+    } catch (error) {
+      // If config file fails, create a minimal config for session auth
+      // The actual auth provider will handle session tokens
+      this.config = {
+        tenancy: 'session',
+        user: 'session', 
+        fingerprint: 'session',
+        key: 'session',
+        region: process.env.OCI_CLI_REGION || 'us-ashburn-1'
+      };
     }
   }
 
@@ -36,6 +64,21 @@ export class OCIConfigService {
     } catch (error) {
       throw new Error(`Failed to load OCI config: ${error}`);
     }
+  }
+
+  private getConfigFromEnvironment(): Partial<OCIConfig> {
+    return {
+      tenancy: process.env.OCI_TENANCY || process.env.OCI_CLI_TENANCY,
+      user: process.env.OCI_USER || process.env.OCI_CLI_USER,
+      fingerprint: process.env.OCI_FINGERPRINT || process.env.OCI_CLI_FINGERPRINT,
+      key: process.env.OCI_PRIVATE_KEY || process.env.OCI_CLI_KEY_CONTENT,
+      region: process.env.OCI_REGION || process.env.OCI_CLI_REGION,
+      compartmentId: process.env.OCI_COMPARTMENT_ID || process.env.OCI_CLI_COMPARTMENT_ID,
+    };
+  }
+
+  private hasRequiredFields(config: Partial<OCIConfig>): boolean {
+    return !!(config.tenancy && config.user && config.fingerprint && config.key && config.region);
   }
 
   private parseConfigFile(content: string): Partial<OCIConfig> {
@@ -111,7 +154,11 @@ export class OCIConfigService {
 
   public getCompartmentId(): string {
     const config = this.getConfig();
-    return config.compartmentId || config.tenancy;
+    if (config.compartmentId) {
+      return config.compartmentId;
+    }
+    // Fall back to tenancy root compartment
+    return config.tenancy;
   }
 
   public static isReadOnlyMode(): boolean {

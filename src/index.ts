@@ -77,13 +77,13 @@ class OCIMCPServer {
         if (computeTools.some(tool => tool.name === name)) {
           result = await handleComputeTools(name, args || {}, this.ociClient);
         } else if (networkingTools.some(tool => tool.name === name)) {
-          result = await handleNetworkingTools(name, args || {}, this.ociClient);
+          result = await handleNetworkingTools(name, args || {}, this.ociClient as any);
         } else if (storageTools.some(tool => tool.name === name)) {
-          result = await handleStorageTools(name, args || {}, this.ociClient);
+          result = await handleStorageTools(name, args || {}, this.ociClient as any);
         } else if (containerTools.some(tool => tool.name === name)) {
           result = await handleContainerTools(name, args || {}, this.ociClient);
         } else if (resourceTools.some(tool => tool.name === name)) {
-          result = await handleResourceTools(name, args || {}, this.ociClient);
+          result = await handleResourceTools(name, args || {}, this.ociClient as any);
         } else {
           throw new Error(`Unknown tool: ${name}`);
         }

@@ -2,6 +2,13 @@
 
 A Model Context Protocol (MCP) server for Oracle Cloud Infrastructure (OCI) that provides comprehensive cloud resource management capabilities through AI assistants.
 
+## 🚀 Latest Updates
+
+- **✅ Updated Dependencies**: OCI SDK v2.111.0, MCP SDK v1.12.1, latest TypeScript
+- **✅ Multiple Authentication Methods**: Session tokens, config files, and environment variables
+- **✅ Comprehensive Testing**: Real OCI integration tests with safety controls
+- **✅ Enhanced Safety**: Read-only mode enforcement for all tests and operations
+
 ## Features
 
 ### Compute Operations
@@ -41,9 +48,20 @@ npm run build
 npm install -g .
 ```
 
-## Configuration
+## Authentication
 
-### Option 1: OCI Config File (Recommended)
+The server supports multiple authentication methods with automatic fallback:
+
+### Option 1: OCI CLI with Session Tokens (Recommended)
+```bash
+# Install and configure OCI CLI
+bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)"
+oci setup config
+
+# The server automatically detects and uses session tokens
+```
+
+### Option 2: OCI Config File
 Create `~/.oci/config` file:
 
 ```ini
@@ -56,7 +74,7 @@ key_file=~/.oci/oci_api_key.pem
 compartment_id=ocid1.compartment.oc1..your-compartment-ocid
 ```
 
-### Option 2: Environment Variables
+### Option 3: Environment Variables
 ```bash
 export OCI_TENANCY=ocid1.tenancy.oc1..your-tenancy-ocid
 export OCI_USER=ocid1.user.oc1..your-user-ocid
@@ -66,18 +84,7 @@ export OCI_REGION=us-ashburn-1
 export OCI_COMPARTMENT_ID=ocid1.compartment.oc1..your-compartment-ocid
 ```
 
-### Option 3: OCI CLI Integration
-If you have OCI CLI configured, the server supports CLI environment variables:
-```bash
-export OCI_CLI_TENANCY=ocid1.tenancy.oc1..your-tenancy-ocid
-export OCI_CLI_USER=ocid1.user.oc1..your-user-ocid
-export OCI_CLI_FINGERPRINT=your-key-fingerprint
-export OCI_CLI_KEY_CONTENT="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
-export OCI_CLI_REGION=us-ashburn-1
-export OCI_CLI_COMPARTMENT_ID=ocid1.compartment.oc1..your-compartment-ocid
-```
-
-**Note:** The server will automatically fall back from standard variables to CLI variables if available.
+**Authentication Priority:** Session Tokens → Config File → Environment Variables
 
 ## Safety Modes
 
@@ -201,6 +208,29 @@ Once configured with an MCP client, you can use natural language to interact wit
 - "Get the kubeconfig for my cluster"
 - "Launch a new VM.Standard2.1 instance in availability domain AD-1"
 
+## Testing
+
+The project includes comprehensive real-world testing with actual OCI services:
+
+### Integration Tests
+```bash
+npm test                # Run Jest integration tests against real OCI
+./test-oci-real.sh      # Shell-based comprehensive testing
+```
+
+### Manual Testing
+```bash
+# List available tools
+echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}' | \
+  OCI_MCP_READ_ONLY=true node dist/index-readonly.js
+
+# Test a specific tool
+echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_instances", "arguments": {}}}' | \
+  OCI_MCP_READ_ONLY=true node dist/index-readonly.js
+```
+
+**Safety**: All tests enforce read-only mode to prevent accidental resource modifications.
+
 ## Development
 
 ```bash
@@ -210,9 +240,24 @@ npm run dev
 # Build
 npm run build
 
-# Test
-npm test
+# Test with coverage
+npm run test:coverage
+
+# Watch mode
+npm run test:watch
 ```
+
+## Technical Details
+
+### Server Variants
+- **`dist/index.js`** - Full server with all OCI operations
+- **`dist/index-simple.js`** - Simplified server without container/Kubernetes operations  
+- **`dist/index-readonly.js`** - Safety-focused server with read-only mode enforcement
+
+### Dependencies
+- **OCI SDK**: v2.111.0 (latest with container engine improvements)
+- **MCP SDK**: v1.12.1 (latest Model Context Protocol)
+- **TypeScript**: v5.7.2 (latest with improved ESM support)
 
 ## Requirements
 
@@ -226,6 +271,15 @@ npm test
 - Use IAM policies to limit the permissions of the OCI user
 - Regularly rotate API keys and access tokens
 - Consider using instance principals when running on OCI compute instances
+- **Always use read-only mode for testing and exploration**
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `npm test`
+5. Submit a pull request
 
 ## License
 
